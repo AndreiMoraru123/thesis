@@ -1,0 +1,104 @@
+\appendix
+\chapter{Clasa UKF - Implementare 'in MATLAB}
+
+
+\lstinputlisting[language=Matlab, xleftmargin=-25mm,basicstyle=\tiny]{UnscentedKalmanFilterModel.m}
+
+
+
+\chapter{Calibrarea giroscopului prin 'inv'a'tare automat'a}
+
+'Intruc\ia t nu am epuizat subiectul calibr'arii senzorilor folosi'ti 'in lucrarea propriu-zis'a, am decis s'a dedic aceast'a anex'a pentru redijarea complexului fenomen, deoarece consider c'a 'intelegerea lui nu poate fi privit'a unilateral fat'a de algoritmii de fuziune senzorial'a.
+
+\vspace{5px}
+
+M'asur'atorile senzorilor giroscopici sunt afectate de temperatur'a \footnote{Nez, Alexis & Fradet, Laetitia \& Laguillaumie, Pierre & Monnet, Tony & Lacouture, Patrick. (2018). Simple and efficient thermal calibration for MEMS gyroscopes. Medical Engineering & Physics. 55.10.1016/j.medengphy.2018.03.002.}, iar acest lucru provoc'a fenomenul de \textit{drift} men'tionat la 'inceputul lucr'arii. De obicei, dac'a temperatura senzorului sau a pl'acii de care este ata'sat cre'ste constant, atunci 'si \textit{drift-ul} va cres'te constant, 'si poate fi aproximat simplu printr-o regresie liniar'a (4.90) - (4.102), sau integrat 'in vectorul de stare al filtrului Kalman pentru a fi estimat odat'a cu orientarea. 
+
+\vspace{5px}
+
+Doresc s'a prezint 'ins'a 'in aceast'a parte a lucr'arii un caz neliniar de cres'tere a temperaturii ce produce ridica'ri 'si sc'aderi 'in media m'asur'atorilor pentru o perioad'a mai lung'a de timp. Am realizat astfel un experiment prin pornirea 'si oprirea unui ventilator extern pentru laptopul la care erau conectate placa de dezvoltare 'si modulul de senzori 'si am 'inregistrat datele citite de la senzori pentru 30000 de itera'tii (aproximativ 60 de minute).
+
+\vspace{5px}
+
+Se poate constata cum m'asur'atorile giroscopului de pe axa X au fost deviate 'in figura B.1. M'asur'atorile accelerometrului 'in schimb nu au fost deloc afectate de schimbarea de temperatur'a pentru nicuna dintre cele trei axe. Pentru c'a zgomotul prezent era mult prea mare, am aplicat setului de date un filtru de mediere pentru o fereastr'a de $\pm 10$ valori, 'si am testat experimentul doar pentru axa ruliu:
+
+\begin{gather}
+    f(X) = \frac{\sum_{i=t-10}^{t+10} X_i}{2 \times 10 + 1}
+\end{gather}
+
+\begin{figure}[h]
+  \hspace*{-4cm}
+  \includesvg{img/processing.svg}
+  \caption{Corec'tie m'asur'atori}
+\end{figure}
+
+Am proiectat apoi pentru datele filtrate o re'tea neuronal'a cu ajutorului submodulului \textit{nn} din PyTorch folosind fun'ctii de activare liniare de baz'a 'si func'tia ReLU \footnote{https://pytorch.org/docs/stable/generated/torch.nn.ReLU.html} (Rectified Linear Unit) pentru a putea descoperi neliniarit'a'tiile 'in propagarea re'telei 'inapoi. 
+
+\vspace{5px}
+
+Pentru ca re'teaua s'a fie capabil'a s'a mimeze toate iregularit'a'tile prezente a fost nevoie de introducere unui num'ar mare de neuroni pentru straturile ascunse, 'si am g'asit empiric c'a un num'ar potrivit este de 25 de neuroni ca l'at'ime pentru o ad\ia ncime de dou'a straturi suplimentare. Am conceput astfel re'teaua neuronal'a conform figurii B.2 \footnote{https://alexlenail.me/NN-SVG/index.html}:
+
+\begin{figure}[h]
+%   \hspace*{-3.5cm}
+\centering
+  \includesvg[width=150mm,scale=1]{img/nn.svg}
+  \caption{Re'tea neuronal'a}
+\end{figure}
+
+Unde penultimul strat ascuns format dintr-un singur neuron are doar rolul s'a mai treac'a o dat'a rezultatul prin activarea neliniar'a 'inainte de procesarea final'a. Astfel, pentru un neuron de la intrare (pentru un element din vectorul de date) se repet'a propagarea p\ia n'a la ob'tinerea rezultatului (neuronul de ie'sire, valoarea punctului transformat'a).
+
+\vspace{5px}
+
+Deoarece corela'tia dintre doi vectori poate fi ob'tinut'a prin calcularea erorii dintre fiecare element asociat unei itera'tii specifice, am ales s'a folosesc func'tie \textit{MSELoss} \footnote{https://pytorch.org/docs/stable/generated/torch.nn.MSELoss.html} ce returneaz'a erorea medie p'atratic'a dintre vectorul ini'tial 'si rezultatul procesat. Astfel, am proiectat algoritmul 'in felul urm'ator: 
+
+
+\begin{algorithm}
+\caption{Propagare re'tea neuronal'a (Pseudo-Python)}
+\begin{algorithmic} 
+\REQUIRE  x = vector itera'tii, y = vector valori giro
+\ENSURE $y,x = float \wedge y,x = torch.tensor$
+\ENSURE MSELoss()
+\ENSURE $nn(Linear(1,25),ReLU(),Linear(25,25),ReLU(),Linear(25,1),ReLU(),Linear(1,1)$
+\ENSURE Optimizator = Stochastic Gradient Descent 
+\STATE $ pas \leftarrow 0.05$
+\STATE $epoci \leftarrow 700$
+\FOR{(epoc'a din epoci)}
+\STATE $\hat y \leftarrow nn(x)$
+\STATE MSELoss($\hat y, y$)
+\STATE MSELoss.backward()
+\STATE Optimizator.gradient\_zero()
+\STATE Optimizator.propagare(pas)
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
+
+Pentru care \textit{pas-ul} reprezint'a valoarea cu care 'inainteaz'a func'tia de gradient (optimizatorul) pentru minimizarea erorii p'atratice, iar func'tiile de tip \textit{backward} \footnote{https://pytorch.org/docs/stable/generated/torch.Tensor.backward.html}, \textit{gradient\_zero} \footnote{https://pytorch.org/docs/stable/generated/torch.optim.Optimizer.zero_grad.html} 'si \textit{propagare} \footnote{https://pytorch.org/docs/stable/generated/torch.optim.Optimizer.step.html} reprezint'a faza de evaluare invers'a a re'telei 'in scopul calcul'arii ponderilor prin func'tiile de activare neliniare ReLU. Aceste ponderi rezultate sunt cele care decif magnitudinea r'aspunsului final pentru fiecare epoc'a 'si astfel se ob'tine un vector ca 'in figurra B.3, 'in al c'arei prim grafic se observ'a c'a valorile tensorului ini'tial au fost extrapolate corect de re'tea cu o valoare de corela'tie de 89\% \footnote{https://numpy.org/doc/stable/reference/generated/numpy.corrcoef.html} 'intre adev'ar 'si predic'tie.
+
+\vspace{5px}
+
+A doua parte a figurii prezint'a minimizarea func'tiei de cost (eroarea medie p'atratic'a atinge valoarea minimi'a posibil'a) 'si se constat'a cum un num'ar mai redus de epoci ar putea fi suficient pentru antrenarea re'telei, 'intruc\ia t sc'aderea nu mai este drastic'a dup'a primele 200 de epoci. 
+\vspace{5px}
+
+Rezultatul final ob'tinut prin sc'aderea fomei recuperate din datele reale se reg'ase'ste 'in al doilea grafic din figura B.1 'si se poate constata c'a astfel s-a redus 'si bias-ul static, dar 'si evolu'tia driftului.
+
+\begin{figure}[h]
+  \hspace*{-3.5cm}
+  \includesvg{img/MLcalib.svg}
+  \caption{Predic'tie re'tea neuronal'a}
+\end{figure}
+
+Desigur, pentru un astfel de exemplu trebuie men'tionat c'a o aproximare polinomial'a ar fi func'tionat probabil mai bine 'si mai eficient, f'ar'a a avea nevoie de timp de antrenare, 'si f'ar'a a putea oferi rezultate gre'site. Un model matematic bazat pe un proces va fi mereu de preferat 'in locul unuia bazat pe 'inv'a'tare, dac'a procesul este determinist.
+
+\vspace{5px}
+
+Cu toate acestea, consider c'a acest tip de metode de calibrare deschide noi perspective pentru senzorii iner'tiali, 'intruc\ia t extrapolarea inteligent'a a unui semnal se poate adapta 'si 'in cazul 'in care acesta 'isi schimb'a comportamentul 'intr-un mod stocastic.
+
+\vspace{5px}
+
+Deoarece acest comportament al m'asur'atorilor senzorului a fost ob'tinut 'intr-un timp de lung'a durat'a comparativ cu minutele de obicei alocate unui joc, 'si pentru c'a ob'tinerea drift-ului a necesitat interven'tie exterioar'a prin modificarea activ'a a temperaturii, acest model nu a fost inclus 'in aplica'tia final'a, dar doresc, prin 'incheierea acestei anexe, s'a pun bazele unei posibile dezvolt'ari ulterioare a unui algoritm de estimare a orient'arii bazat pe inteligen't'a artificial'a.
+
+
+
+\chapter{Lucr'ari publicate}
+
+A. Moraru, "Quaternion Based Kalman Filter for Open Loop Attitude Estimation", AQTR Student Forum, p. 29, Aprilie 2022
