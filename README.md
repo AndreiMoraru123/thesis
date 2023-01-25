@@ -1,5 +1,8 @@
 # Thesis
-The LaTeX source code for my bachelor's.
+
+![LaTeX](https://img.shields.io/badge/latex-%23008080.svg?style=for-the-badge&logo=latex&logoColor=white)
+
+The source code for my bachelor's.
 
 Check out [this repo](https://github.com/AndreiMoraru123/ObjectTracking) and also [this one](https://github.com/AndreiMoraru123/SensorFusion) for demos.
 
